@@ -88,6 +88,82 @@ def organize_directory(usb_path: Path, audio_format: str, safe_chars: bool, grou
             except OSError:
                 pass
 
+def apply_fat32_sort(usb_path: Path, audio_format: str):
+    import time
+    import tempfile
+    import shutil
+    console.print("[bold blue]Applying physical FAT32 order for car stereos (--fat-fix)...[/bold blue]")
+    
+    dirs_to_process = []
+    for root, dirs, files in os.walk(usb_path):
+        if ".spotdl" in root or ".fat_temp" in root: continue
+        audio_files = [f for f in files if f.endswith(f".{audio_format}")]
+        if audio_files:
+            dirs_to_process.append((Path(root), audio_files))
+            
+    for root_path, audio_files in dirs_to_process:
+        audio_files.sort()
+        is_root = root_path.parent == root_path
+        
+        if is_root:
+            # Usa o %TEMP% do Windows para não ter que criar subpastas no pendrive
+            pc_temp_dir = Path(tempfile.gettempdir()) / "ytmusb_fat_fix"
+            pc_temp_dir.mkdir(exist_ok=True)
+            
+            console.print(f"[bold yellow]Transferindo {len(audio_files)} músicas para o Windows (%TEMP%) para limpar a FAT...[/bold yellow]")
+            for f in audio_files:
+                src = root_path / f
+                dst = pc_temp_dir / f
+                if src.exists():
+                    shutil.move(str(src), str(dst))
+                    
+            console.print(f"[bold yellow]Devolvendo músicas para a raiz do pendrive em ordem perfeita...[/bold yellow]")
+            for f in audio_files:
+                src = pc_temp_dir / f
+                dst = root_path / f
+                if src.exists():
+                    shutil.move(str(src), str(dst))
+                    try:
+                        os.utime(dst, None)
+                        time.sleep(0.01)
+                    except Exception:
+                        pass
+                        
+            # Limpa temp do PC
+            try:
+                shutil.rmtree(pc_temp_dir)
+            except Exception:
+                pass
+        else:
+            # É uma subpasta. Criamos uma pasta nova ao lado dela (muito rápido, mesmo pendrive)
+            parent_dir = root_path.parent
+            fresh_dir = parent_dir / f".fat_temp_{root_path.name}"
+            fresh_dir.mkdir(exist_ok=True)
+            
+            for f in audio_files:
+                src = root_path / f
+                dst = fresh_dir / f
+                if src.exists():
+                    src.rename(dst)
+                    try:
+                        os.utime(dst, None)
+                        time.sleep(0.01)
+                    except Exception:
+                        pass
+                        
+            for item in list(root_path.iterdir()):
+                if item != fresh_dir:
+                    try:
+                        item.rename(fresh_dir / item.name)
+                    except Exception:
+                        pass
+                        
+            try:
+                root_path.rmdir()
+                fresh_dir.rename(root_path)
+            except Exception as e:
+                console.print(f"[bold red]Warning: Could not fully swap folders for FAT fix: {e}[/bold red]")
+
 @app.command("sync")
 def sync(
     url: str = typer.Argument(..., help="YouTube Music playlist URL"),
@@ -97,7 +173,8 @@ def sync(
     safe_chars: bool = typer.Option(False, "--safe-chars", help="Remove accents and emojis for compatibility with older stereos"),
     sync_mode: bool = typer.Option(False, "--sync", help="Download only missing tracks from the destination folder"),
     audio_format: str = typer.Option("mp3", "--format", help="Audio format (mp3, m4a, flac, etc.)"),
-    alpha_order: bool = typer.Option(False, "--alpha-order", help="Enumerate songs from 001 to infinity in alphabetical order")
+    alpha_order: bool = typer.Option(False, "--alpha-order", help="Enumerate songs from 001 to infinity in alphabetical order"),
+    fat_fix: bool = typer.Option(True, "--fat-fix", help="Physically rewrites files to enforce order on FAT32 car stereos")
 ):
     """Downloads and synchronizes songs from a YouTube Music playlist."""
     console.print(f"[bold green]Starting YoutubeMusic-USB (Download Phase)[/bold green]")
@@ -146,6 +223,8 @@ def sync(
         raise typer.Exit(1)
 
     organize_directory(usb_path, audio_format, safe_chars, group_by_artist, alpha_order)
+    if fat_fix:
+        apply_fat32_sort(usb_path, audio_format)
     console.print(f"[bold green]Successfully completed! Your songs are located at: {usb_path}[/bold green]")
 
 @app.command("organize")
@@ -154,7 +233,8 @@ def organize(
     safe_chars: bool = typer.Option(False, "--safe-chars", help="Remove accents and emojis for compatibility with older stereos"),
     alpha_order: bool = typer.Option(True, "--alpha-order", help="Enumerate songs from 001 to infinity in alphabetical order"),
     group_by_artist: bool = typer.Option(False, "--group-by-artist", help="Only used to rename artist folders in safe-chars mode"),
-    audio_format: str = typer.Option("mp3", "--format", help="Audio format of the files to organize")
+    audio_format: str = typer.Option("mp3", "--format", help="Audio format of the files to organize"),
+    fat_fix: bool = typer.Option(True, "--fat-fix", help="Physically rewrites files to enforce order on FAT32 car stereos")
 ):
     """Organizes songs in an existing folder (Alphabetical order and Safe-chars) without downloading anything new."""
     console.print(f"[bold green]Starting YoutubeMusic-USB (Organization Phase)[/bold green]")
@@ -163,6 +243,8 @@ def organize(
         raise typer.Exit(1)
         
     organize_directory(usb_path, audio_format, safe_chars, group_by_artist, alpha_order)
+    if fat_fix:
+        apply_fat32_sort(usb_path, audio_format)
     console.print(f"[bold green]Organization successfully completed![/bold green]")
 
 if __name__ == "__main__":
