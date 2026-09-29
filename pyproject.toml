@@ -1,0 +1,22 @@
+[project]
+name = "youtubemusic-usb"
+version = "0.1.0"
+description = "CLI tool to download and synchronize YouTube Music playlists to USB drives, optimized for car audio systems."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "mutagen>=1.48.1",
+    "rich>=13.9.4",
+    "spotdl>=4.5.0",
+    "typer>=0.27.2",
+    "yt-dlp>=2026.0.0",
+    "ytmusicapi>=1.12.3",
+]
+
+[project.scripts]
+ytm-usb = "youtubemusic_usb.cli:app"
+
+[build-system]
+requires = ['hatchling']
+build-backend = 'hatchling.build'
+
